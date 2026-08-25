@@ -521,6 +521,12 @@
   }
 
   function skipSession(){
+    if(state.isRunning){
+      state.isRunning = false;
+      el.batSvg.classList.remove('is-running');
+      el.batSvg.classList.add('is-paused');
+      updateStartPauseIcon();
+    }
     advanceToNextMode(true);
   }
 
