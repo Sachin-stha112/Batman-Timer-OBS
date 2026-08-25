@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gotham Pomodoro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ============================================================
+     GOTHAM POMODORO — OBS Browser Source Overlay
+     Transparent background, self-contained, offline.
+     ============================================================ */
+
+  :root{
+    --accent-study:  #f4c542;
+    --accent-short:  #2fd6b0;
+    --accent-long:   #4a90f7;
+    --ink:           #f1f1ee;
+    --ink-dim:       rgba(241,241,238,0.55);
+    --panel-bg:      rgba(8,8,10,0.86);
+    --bat-fill:      rgba(9,9,11,0.86);
+  }
+
+  html, body{
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    background:transparent;   /* critical for OBS chroma-free transparency */
+    overflow:hidden;
+    font-family:'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  *{ box-sizing:border-box; }
+
+  button{
+    font-family:inherit;
+    cursor:pointer;
+  }
+
+  .stage{
+    position:relative;
+    width:100vw;
+    height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  /* ---------- Emblem wrap: sizes to ~78vw at 1080p, scales down cleanly ---------- */
+  .emblem-wrap{
+    position:relative;
+    width:clamp(520px, 78vw, 1500px);
+    aspect-ratio: 260 / 98;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition: filter 0.6s ease;
+  }
+
+  .emblem-wrap[data-mode="study"]{ --accent: var(--accent-study); }
+  .emblem-wrap[data-mode="short"]{ --accent: var(--accent-short); }
+  .emblem-wrap[data-mode="long"]{  --accent: var(--accent-long); }
+
+  /* ambient glow behind everything, very subtle */
+  .ambient-glow{
+    position:absolute;
+    width:70%;
+    height:70%;
+    border-radius:50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 70%);
+    filter: blur(6px);
+    pointer-events:none;
+    transition: background 0.6s ease;
+  }
+
+  /* ---------- Bat silhouette (bat-signal style solid glyph) ---------- */
+  .bat-svg{
+    position:absolute;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+    transition: filter 0.5s ease;
+  }
+  .bat-shape path{
+    fill: #000000;
+  }
+  .bat-svg.is-running{
+    animation: breathe 5s ease-in-out infinite;
+  }
+  .bat-svg.is-paused{
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 35%, transparent));
+    opacity:0.85;
+  }
+  .bat-svg:not(.is-paused){
+    filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 55%, transparent));
+  }
+
+  @keyframes breathe{
+    0%,100%{ transform:scale(1);   filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 55%, transparent)); }
+    50%    { transform:scale(1.015); filter: drop-shadow(0 0 22px color-mix(in srgb, var(--accent) 70%, transparent)); }
+  }
+
+  .bat-svg.finish-flash{
+    animation: flash 0.9s ease-out;
+  }
+  @keyframes flash{
+    0%{ filter: drop-shadow(0 0 14px var(--accent)); transform:scale(1); }
+    30%{ filter: drop-shadow(0 0 40px var(--accent)); transform:scale(1.05); }
+    100%{ filter: drop-shadow(0 0 14px var(--accent)); transform:scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .bat-svg.is-running{ animation:none; }
+    .bat-svg.finish-flash{ animation:none; }
+  }
+
+  /* ---------- Content (text) ---------- */
+  .content{
+    position:absolute;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index:2;
+    width: 60%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 0.12em;
+    text-align:center;
+    pointer-events:none;
+  }
+
+  .mode-label{
+    font-size: clamp(10px, 1vw, 15px);
+    letter-spacing: 0.32em;
+    font-weight:700;
+    color: #000000;
+    text-transform:uppercase;
+    -webkit-text-stroke: 0.4px var(--accent);
+    text-shadow: 0 0 6px var(--accent), 0 0 14px color-mix(in srgb, var(--accent) 65%, transparent);
+    transition: text-shadow 0.6s ease, -webkit-text-stroke-color 0.6s ease;
+  }
+
+  .time-display{
+    font-size: clamp(44px, 7vw, 118px);
+    font-weight:700;
+    line-height:1;
+    color: #000000;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: 0.02em;
+    -webkit-text-stroke: 0.6px var(--accent);
+    text-shadow: 0 0 10px var(--accent), 0 0 26px color-mix(in srgb, var(--accent) 55%, transparent);
+    transition: text-shadow 0.6s ease, -webkit-text-stroke-color 0.6s ease;
+  }
+
+  .session-label{
+    font-size: clamp(8px, 0.8vw, 12px);
+    letter-spacing: 0.28em;
+    font-weight:600;
+    color: #000000;
+    text-transform:uppercase;
+    -webkit-text-stroke: 0.3px var(--accent);
+    text-shadow: 0 0 5px color-mix(in srgb, var(--accent) 60%, transparent);
+    transition: text-shadow 0.6s ease, -webkit-text-stroke-color 0.6s ease;
+  }
+
+  .session-dots{
+    display:flex;
+    gap: 0.5em;
+    margin-top:0.15em;
+  }
+  .session-dot{
+    width: clamp(5px, 0.55vw, 8px);
+    height: clamp(5px, 0.55vw, 8px);
+    border-radius:50%;
+    background: rgba(255,255,255,0.18);
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+  }
+  .session-dot.filled{
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  /* ---------- Controls (minimal, unobtrusive) ---------- */
+  .controls{
+    position:absolute;
+    left:50%;
+    bottom: 4.5%;
+    transform: translateX(-50%);
+    display:flex;
+    gap:10px;
+    padding:6px 10px;
+    background: rgba(6,6,8,0.35);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:999px;
+    opacity:0.38;
+    transition: opacity 0.25s ease;
+    backdrop-filter: blur(4px);
+  }
+  .controls:hover,
+  .controls:focus-within{
+    opacity:1;
+  }
+  .ctrl-btn{
+    width: 30px;
+    height: 30px;
+    border-radius:50%;
+    border:1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.04);
+    color: var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  }
+  .ctrl-btn:hover{ background: rgba(255,255,255,0.12); }
+  .ctrl-btn:active{ transform: scale(0.92); }
+  .ctrl-btn:focus-visible{ outline: 2px solid var(--accent-study); outline-offset:2px; }
+  .ctrl-btn svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .ctrl-btn.icon-fill svg{ fill:currentColor; stroke:none; }
+
+  /* ---------- Settings panel ---------- */
+  .settings-panel{
+    position:absolute;
+    right: 2.5%;
+    top: 3%;
+    width: 250px;
+    max-width: 80vw;
+    background: var(--panel-bg);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:12px;
+    padding:16px 16px 14px;
+    color: var(--ink);
+    font-size:12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index:5;
+  }
+  .settings-panel[hidden]{ display:none; }
+  .settings-panel h2{
+    margin:0 0 10px;
+    font-size:12px;
+    letter-spacing:0.22em;
+    text-transform:uppercase;
+    color: var(--accent-study);
+    font-weight:700;
+  }
+  .settings-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:9px;
+  }
+  .settings-row label{
+    color: var(--ink-dim);
+    flex:1;
+  }
+  .settings-row input[type="number"]{
+    width:56px;
+    background: rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.14);
+    border-radius:6px;
+    color:var(--ink);
+    padding:4px 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .settings-row input[type="range"]{
+    width:90px;
+  }
+  .toggle{
+    position:relative;
+    width:34px;
+    height:18px;
+    border-radius:999px;
+    background: rgba(255,255,255,0.14);
+    border:none;
+    cursor:pointer;
+  }
+  .toggle::after{
+    content:"";
+    position:absolute;
+    top:2px; left:2px;
+    width:14px; height:14px;
+    border-radius:50%;
+    background:#fff;
+    transition: left 0.18s ease;
+  }
+  .toggle.on{ background: var(--accent-study); }
+  .toggle.on::after{ left:18px; }
+
+  .settings-close{
+    width:100%;
+    margin-top:6px;
+    padding:6px 0;
+    border-radius:7px;
+    border:1px solid rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.05);
+    color:var(--ink);
+    font-size:11px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+  }
+  .settings-close:hover{ background: rgba(255,255,255,0.12); }
+
+  .sr-only{
+    position:absolute;
+    width:1px; height:1px;
+    overflow:hidden;
+    clip:rect(0 0 0 0);
+    white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+
+  <div class="emblem-wrap" id="emblemWrap" data-mode="study">
+
+    <div class="ambient-glow" aria-hidden="true"></div>
+
+    <svg class="bat-svg" id="batSvg" viewBox="-2,97,260,98" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+      <g class="bat-shape">
+        <path d="M0,25c7,2 11,7 9,14c10,-3 21,0 23,9c2,-9 13,-12 23,-9c-2,-7 2,-12 9,-14h-22c-1,5 -4,6 -7.5,6l-0.00195,-0.02734c-0.0011,-0.22895 -0.02403,-0.457 -0.06836,-0.67969l-0.42969,-4.29297l-1.10156,2.20313c-0.28653,-0.1334 -0.5911,-0.20226 -0.89844,-0.20312c-0.30744,0.00149 -0.61201,0.07101 -0.89844,0.20508l-1.10156,-2.20508l-0.43359,4.33008c-0.03961,0.20831 -0.06056,0.42111 -0.0625,0.63477l-0.00391,0.03516c-3.5,0 -6.5,-1 -7.5,-6z" transform="scale(4,4)"></path>
+      </g>
+    </svg>
+
+    <div class="content">
+      <div class="mode-label" id="modeLabel">Study</div>
+      <div class="time-display" id="timeDisplay">25:00</div>
+      <div class="session-label" id="sessionLabel">Session 1 / 4</div>
+      <div class="session-dots" id="sessionDots"></div>
+    </div>
+  </div>
+
+  <div class="controls" id="controls">
+    <button class="ctrl-btn" id="btnStartPause" title="Start / Pause (Space)" aria-label="Start or pause timer">
+      <svg id="iconStartPause" viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20" fill="currentColor" stroke="none"></polygon></svg>
+    </button>
+    <button class="ctrl-btn" id="btnReset" title="Reset (R)" aria-label="Reset current session">
+      <svg viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 18.5 16"></path><polyline points="20 4 20 11 13 11"></polyline></svg>
+    </button>
+    <button class="ctrl-btn" id="btnSkip" title="Skip (S)" aria-label="Skip to next session">
+      <svg viewBox="0 0 24 24"><polygon points="5,4 15,12 5,20" fill="currentColor" stroke="none"></polygon><rect x="17" y="4" width="2.4" height="16" fill="currentColor" stroke="none"></rect></svg>
+    </button>
+    <button class="ctrl-btn" id="btnMute" title="Mute / Unmute (M)" aria-label="Toggle sound">
+      <svg id="iconMute" viewBox="0 0 24 24"><polygon points="4,9 8,9 13,4 13,20 8,15 4,15" fill="currentColor" stroke="none"></polygon><path id="muteWaves" d="M16 8a5 5 0 0 1 0 8"></path></svg>
+    </button>
+    <button class="ctrl-btn" id="btnSettings" title="Settings" aria-label="Open settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 13a1.8 1.8 0 0 0 .36 1.98l.04.04a2.17 2.17 0 1 1-3.07 3.07l-.04-.04a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.09 1.65V19.6a2.17 2.17 0 1 1-4.34 0v-.06a1.8 1.8 0 0 0-1.18-1.65 1.8 1.8 0 0 0-1.98.36l-.04.04a2.17 2.17 0 1 1-3.07-3.07l.04-.04A1.8 1.8 0 0 0 4.4 13a1.8 1.8 0 0 0-1.65-1.09H2.6a2.17 2.17 0 1 1 0-4.34h.06A1.8 1.8 0 0 0 4.31 6.4a1.8 1.8 0 0 0-.36-1.98l-.04-.04A2.17 2.17 0 1 1 6.98 1.3l.04.04A1.8 1.8 0 0 0 9 1.7a1.8 1.8 0 0 0 1.09-1.65V0"></path></svg>
+    </button>
+  </div>
+
+  <div class="settings-panel" id="settingsPanel" hidden>
+    <h2>Settings</h2>
+
+    <div class="settings-row">
+      <label for="inStudy">Study (min)</label>
+      <input type="number" id="inStudy" min="1" max="180">
+    </div>
+    <div class="settings-row">
+      <label for="inShort">Short break (min)</label>
+      <input type="number" id="inShort" min="1" max="60">
+    </div>
+    <div class="settings-row">
+      <label for="inLong">Long break (min)</label>
+      <input type="number" id="inLong" min="1" max="90">
+    </div>
+    <div class="settings-row">
+      <label for="inCycle">Sessions / long break</label>
+      <input type="number" id="inCycle" min="1" max="12">
+    </div>
+    <div class="settings-row">
+      <label for="btnAutoStart">Auto-start next</label>
+      <button class="toggle" id="btnAutoStart" role="switch" aria-checked="true" aria-label="Toggle auto-start"></button>
+    </div>
+    <div class="settings-row">
+      <label for="btnSoundToggle">Sound</label>
+      <button class="toggle" id="btnSoundToggle" role="switch" aria-checked="true" aria-label="Toggle sound"></button>
+    </div>
+    <div class="settings-row">
+      <label for="inVolume">Volume</label>
+      <input type="range" id="inVolume" min="0" max="1" step="0.05">
+    </div>
+
+    <button class="settings-close" id="btnCloseSettings">Close</button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================================================
+     STATE
+     ============================================================ */
+  var DEFAULTS = {
+    studyMin: 25,
+    shortMin: 5,
+    longMin: 15,
+    sessionsBeforeLong: 4,
+    autoStart: true,
+    soundOn: true,
+    volume: 0.5
+  };
+
+  var settings = Object.assign({}, DEFAULTS);
+
+  var state = {
+    mode: 'study',            // 'study' | 'short' | 'long'
+    isRunning: false,
+    endTime: null,            // Date.now() timestamp target when running
+    remainingMs: settings.studyMin * 60000,
+    sessionsCompleted: 0,     // completed study sessions within current cycle
+    totalStudySessions: 0
+  };
+
+  var tickHandle = null;
+  var audioCtx = null;
+
+  /* ============================================================
+     ELEMENTS
+     ============================================================ */
+  var el = {
+    wrap: document.getElementById('emblemWrap'),
+    batSvg: document.getElementById('batSvg'),
+    modeLabel: document.getElementById('modeLabel'),
+    timeDisplay: document.getElementById('timeDisplay'),
+    sessionLabel: document.getElementById('sessionLabel'),
+    sessionDots: document.getElementById('sessionDots'),
+    btnStartPause: document.getElementById('btnStartPause'),
+    iconStartPause: document.getElementById('iconStartPause'),
+    btnReset: document.getElementById('btnReset'),
+    btnSkip: document.getElementById('btnSkip'),
+    btnMute: document.getElementById('btnMute'),
+    muteWaves: document.getElementById('muteWaves'),
+    btnSettings: document.getElementById('btnSettings'),
+    settingsPanel: document.getElementById('settingsPanel'),
+    btnCloseSettings: document.getElementById('btnCloseSettings'),
+    inStudy: document.getElementById('inStudy'),
+    inShort: document.getElementById('inShort'),
+    inLong: document.getElementById('inLong'),
+    inCycle: document.getElementById('inCycle'),
+    btnAutoStart: document.getElementById('btnAutoStart'),
+    btnSoundToggle: document.getElementById('btnSoundToggle'),
+    inVolume: document.getElementById('inVolume')
+  };
+
+  /* ============================================================
+     PERSISTENCE
+     ============================================================ */
+  function saveSettings(){
+    try{
+      var payload = {
+        settings: settings,
+        mode: state.mode,
+        sessionsCompleted: state.sessionsCompleted,
+        totalStudySessions: state.totalStudySessions
+      };
+      localStorage.setItem('gothamPomodoro', JSON.stringify(payload));
+    }catch(e){ /* localStorage unavailable — fail silently */ }
+  }
+
+  function loadSettings(){
+    try{
+      var raw = localStorage.getItem('gothamPomodoro');
+      if(!raw) return;
+      var data = JSON.parse(raw);
+      if(data.settings) settings = Object.assign({}, DEFAULTS, data.settings);
+      if(data.mode) state.mode = data.mode;
+      if(typeof data.sessionsCompleted === 'number') state.sessionsCompleted = data.sessionsCompleted;
+      if(typeof data.totalStudySessions === 'number') state.totalStudySessions = data.totalStudySessions;
+    }catch(e){ /* corrupted or unavailable storage — use defaults */ }
+  }
+
+  /* ============================================================
+     TIMER CORE (timestamp-based, drift-proof)
+     ============================================================ */
+  function durationForMode(mode){
+    if(mode === 'study') return settings.studyMin * 60000;
+    if(mode === 'short') return settings.shortMin * 60000;
+    return settings.longMin * 60000;
+  }
+
+  function startTimer(){
+    if(state.isRunning) return;
+    resumeAudioIfNeeded();
+    state.endTime = Date.now() + state.remainingMs;
+    state.isRunning = true;
+    el.batSvg.classList.add('is-running');
+    el.batSvg.classList.remove('is-paused');
+    updateStartPauseIcon();
+    if(!tickHandle) tickHandle = setInterval(tick, 250);
+  }
+
+  function pauseTimer(){
+    if(!state.isRunning) return;
+    state.remainingMs = Math.max(0, state.endTime - Date.now());
+    state.isRunning = false;
+    el.batSvg.classList.remove('is-running');
+    el.batSvg.classList.add('is-paused');
+    updateStartPauseIcon();
+  }
+
+  function toggleStartPause(){
+    if(state.isRunning) pauseTimer(); else startTimer();
+  }
+
+  function resetTimer(){
+    state.isRunning = false;
+    state.remainingMs = durationForMode(state.mode);
+    state.endTime = null;
+    el.batSvg.classList.remove('is-running');
+    el.batSvg.classList.add('is-paused');
+    updateStartPauseIcon();
+    updateDisplay();
+  }
+
+  function skipSession(){
+    advanceToNextMode(true);
+  }
+
+  function switchMode(newMode){
+    state.mode = newMode;
+    state.remainingMs = durationForMode(newMode);
+    state.endTime = null;
+    el.wrap.setAttribute('data-mode', newMode === 'study' ? 'study' : (newMode === 'short' ? 'short' : 'long'));
+    updateDisplay();
+    saveSettings();
+  }
+
+  function advanceToNextMode(bySkip){
+    var nextMode;
+    if(state.mode === 'study'){
+      state.totalStudySessions++;
+      state.sessionsCompleted++;
+      if(state.sessionsCompleted >= settings.sessionsBeforeLong){
+        nextMode = 'long';
+        state.sessionsCompleted = 0;
+      }else{
+        nextMode = 'short';
+      }
+    }else{
+      nextMode = 'study';
+    }
+
+    if(!bySkip){
+      playNotificationSound();
+      flashEmblem();
+    }
+
+    switchMode(nextMode);
+
+    if(settings.autoStart){
+      startTimer();
+    }else{
+      state.isRunning = false;
+      el.batSvg.classList.remove('is-running');
+      el.batSvg.classList.add('is-paused');
+      updateStartPauseIcon();
+    }
+  }
+
+  function tick(){
+    if(!state.isRunning) return;
+    var remaining = state.endTime - Date.now();
+    if(remaining <= 0){
+      state.remainingMs = 0;
+      updateDisplay();
+      advanceToNextMode(false);
+      return;
+    }
+    state.remainingMs = remaining;
+    updateDisplay();
+  }
+
+  /* ============================================================
+     UI UPDATES
+     ============================================================ */
+  function updateStartPauseIcon(){
+    if(state.isRunning){
+      el.iconStartPause.innerHTML = '<rect x="6" y="4" width="4.5" height="16" fill="currentColor"></rect><rect x="14" y="4" width="4.5" height="16" fill="currentColor"></rect>';
+      el.btnStartPause.title = 'Pause (Space)';
+    }else{
+      el.iconStartPause.innerHTML = '<polygon points="6,4 20,12 6,20" fill="currentColor"></polygon>';
+      el.btnStartPause.title = 'Start (Space)';
+    }
+  }
+
+  function formatTime(ms){
+    var totalSeconds = Math.ceil(ms / 1000);
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    return (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  function modeText(mode){
+    if(mode === 'study') return 'Study';
+    if(mode === 'short') return 'Short Break';
+    return 'Long Break';
+  }
+
+  function updateDisplay(){
+    el.timeDisplay.textContent = formatTime(state.remainingMs);
+    el.modeLabel.textContent = modeText(state.mode);
+    var displaySession = Math.min(state.sessionsCompleted + (state.mode === 'study' ? 1 : 0), settings.sessionsBeforeLong);
+    if(displaySession < 1) displaySession = 1;
+    el.sessionLabel.textContent = 'Session ' + displaySession + ' / ' + settings.sessionsBeforeLong;
+    renderSessionDots();
+    document.title = formatTime(state.remainingMs) + ' — ' + modeText(state.mode);
+  }
+
+  function renderSessionDots(){
+    var total = settings.sessionsBeforeLong;
+    var filled = state.sessionsCompleted;
+    var html = '';
+    for(var i = 0; i < total; i++){
+      html += '<span class="session-dot' + (i < filled ? ' filled' : '') + '"></span>';
+    }
+    el.sessionDots.innerHTML = html;
+  }
+
+  function flashEmblem(){
+    el.batSvg.classList.add('finish-flash');
+    setTimeout(function(){ el.batSvg.classList.remove('finish-flash'); }, 950);
+  }
+
+  /* ============================================================
+     SOUND (Web Audio API — no external files)
+     ============================================================ */
+  function ensureAudioCtx(){
+    if(!audioCtx){
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if(Ctx) audioCtx = new Ctx();
+    }
+    return audioCtx;
+  }
+
+  function resumeAudioIfNeeded(){
+    var ctx = ensureAudioCtx();
+    if(ctx && ctx.state === 'suspended'){
+      ctx.resume().catch(function(){});
+    }
+  }
+
+  function playNotificationSound(){
+    if(!settings.soundOn) return;
+    var ctx = ensureAudioCtx();
+    if(!ctx) return;
+    if(ctx.state === 'suspended'){ ctx.resume().catch(function(){}); }
+
+    var notes = [660, 880, 990]; // pleasant ascending 3-note chime
+    var startTime = ctx.currentTime + 0.02;
+    var noteLength = 0.16;
+
+    notes.forEach(function(freq, i){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      var t0 = startTime + i * noteLength;
+      var peak = Math.max(0.0001, settings.volume * 0.35);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.linearRampToValueAtTime(peak, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + noteLength);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + noteLength + 0.02);
+    });
+  }
+
+  function updateMuteIcon(){
+    el.muteWaves.style.display = settings.soundOn ? '' : 'none';
+    el.btnMute.title = settings.soundOn ? 'Mute (M)' : 'Unmute (M)';
+  }
+
+  /* ============================================================
+     SETTINGS PANEL BINDINGS
+     ============================================================ */
+  function syncSettingsForm(){
+    el.inStudy.value = settings.studyMin;
+    el.inShort.value = settings.shortMin;
+    el.inLong.value = settings.longMin;
+    el.inCycle.value = settings.sessionsBeforeLong;
+    el.inVolume.value = settings.volume;
+    el.btnAutoStart.classList.toggle('on', settings.autoStart);
+    el.btnAutoStart.setAttribute('aria-checked', String(settings.autoStart));
+    el.btnSoundToggle.classList.toggle('on', settings.soundOn);
+    el.btnSoundToggle.setAttribute('aria-checked', String(settings.soundOn));
+  }
+
+  function openSettings(){
+    syncSettingsForm();
+    el.settingsPanel.hidden = false;
+  }
+  function closeSettings(){
+    el.settingsPanel.hidden = true;
+  }
+  function toggleSettings(){
+    if(el.settingsPanel.hidden) openSettings(); else closeSettings();
+  }
+
+  function applyDurationChange(){
+    // If the current mode's timer isn't running, refresh remaining time to match new duration.
+    if(!state.isRunning){
+      state.remainingMs = durationForMode(state.mode);
+      updateDisplay();
+    }
+  }
+
+  el.inStudy.addEventListener('change', function(){
+    settings.studyMin = clampNum(el.inStudy.value, 1, 180, DEFAULTS.studyMin);
+    el.inStudy.value = settings.studyMin;
+    applyDurationChange();
+    saveSettings();
+  });
+  el.inShort.addEventListener('change', function(){
+    settings.shortMin = clampNum(el.inShort.value, 1, 60, DEFAULTS.shortMin);
+    el.inShort.value = settings.shortMin;
+    applyDurationChange();
+    saveSettings();
+  });
+  el.inLong.addEventListener('change', function(){
+    settings.longMin = clampNum(el.inLong.value, 1, 90, DEFAULTS.longMin);
+    el.inLong.value = settings.longMin;
+    applyDurationChange();
+    saveSettings();
+  });
+  el.inCycle.addEventListener('change', function(){
+    settings.sessionsBeforeLong = clampNum(el.inCycle.value, 1, 12, DEFAULTS.sessionsBeforeLong);
+    el.inCycle.value = settings.sessionsBeforeLong;
+    if(state.sessionsCompleted > settings.sessionsBeforeLong) state.sessionsCompleted = settings.sessionsBeforeLong;
+    updateDisplay();
+    saveSettings();
+  });
+  el.inVolume.addEventListener('input', function(){
+    settings.volume = parseFloat(el.inVolume.value);
+    saveSettings();
+  });
+  el.btnAutoStart.addEventListener('click', function(){
+    settings.autoStart = !settings.autoStart;
+    syncSettingsForm();
+    saveSettings();
+  });
+  el.btnSoundToggle.addEventListener('click', function(){
+    settings.soundOn = !settings.soundOn;
+    syncSettingsForm();
+    updateMuteIcon();
+    saveSettings();
+  });
+
+  function clampNum(val, min, max, fallback){
+    var n = parseInt(val, 10);
+    if(isNaN(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  /* ============================================================
+     CONTROL BUTTON BINDINGS
+     ============================================================ */
+  el.btnStartPause.addEventListener('click', toggleStartPause);
+  el.btnReset.addEventListener('click', resetTimer);
+  el.btnSkip.addEventListener('click', skipSession);
+  el.btnMute.addEventListener('click', function(){
+    settings.soundOn = !settings.soundOn;
+    updateMuteIcon();
+    syncSettingsForm();
+    saveSettings();
+  });
+  el.btnSettings.addEventListener('click', toggleSettings);
+  el.btnCloseSettings.addEventListener('click', closeSettings);
+
+  /* ============================================================
+     KEYBOARD SHORTCUTS
+     ============================================================ */
+  document.addEventListener('keydown', function(e){
+    var tag = (e.target && e.target.tagName) || '';
+    if(tag === 'INPUT') return; // don't hijack typing in settings fields
+
+    switch(e.key.toLowerCase()){
+      case ' ':
+        e.preventDefault();
+        toggleStartPause();
+        break;
+      case 'r':
+        resetTimer();
+        break;
+      case 's':
+        skipSession();
+        break;
+      case 'm':
+        settings.soundOn = !settings.soundOn;
+        updateMuteIcon();
+        syncSettingsForm();
+        saveSettings();
+        break;
+      case 'escape':
+        closeSettings();
+        break;
+    }
+  });
+
+  /* ============================================================
+     INIT
+     ============================================================ */
+  function init(){
+    loadSettings();
+
+    el.wrap.setAttribute('data-mode', state.mode === 'study' ? 'study' : (state.mode === 'short' ? 'short' : 'long'));
+    state.remainingMs = durationForMode(state.mode);
+    state.isRunning = false;
+
+    el.batSvg.classList.add('is-paused');
+    updateStartPauseIcon();
+    updateMuteIcon();
+    updateDisplay();
+
+    if(!tickHandle) tickHandle = setInterval(tick, 250);
+  }
+
+  init();
+
+})();
+</script>
+</body>
+</html>
