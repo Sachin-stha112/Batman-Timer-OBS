@@ -5,10 +5,7 @@
 <title>Gotham Pomodoro</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  /* ============================================================
-     GOTHAM POMODORO — OBS Browser Source Overlay
-     Transparent background, self-contained, offline.
-     ============================================================ */
+  
 
   :root{
     --accent-study:  #f4c542;
@@ -25,7 +22,7 @@
     padding:0;
     width:100%;
     height:100%;
-    background:transparent;   /* critical for OBS chroma-free transparency */
+    background:transparent;   /* OBS chroma-free transparency */
     overflow:hidden;
     font-family:'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     -webkit-font-smoothing:antialiased;
@@ -47,7 +44,7 @@
     justify-content:center;
   }
 
-  /* ---------- Emblem wrap: sizes to ~78vw at 1080p, scales down cleanly ---------- */
+  /* ---------- scales down cleanly ---------- */
   .emblem-wrap{
     position:relative;
     width:clamp(520px, 78vw, 1500px);
@@ -62,7 +59,7 @@
   .emblem-wrap[data-mode="short"]{ --accent: var(--accent-short); }
   .emblem-wrap[data-mode="long"]{  --accent: var(--accent-long); }
 
-  /* ambient glow behind everything, very subtle */
+  /* ambient glow*/
   .ambient-glow{
     position:absolute;
     width:70%;
@@ -115,7 +112,7 @@
     .bat-svg.finish-flash{ animation:none; }
   }
 
-  /* ---------- Content (text) ---------- */
+  /* ---------- Content ---------- */
   .content{
     position:absolute;
     top: 42%;
@@ -184,7 +181,7 @@
     box-shadow: 0 0 6px var(--accent);
   }
 
-  /* ---------- Controls (minimal, unobtrusive) ---------- */
+  /* ---------- Controls---------- */
   .controls{
     position:absolute;
     left:50%;
@@ -395,9 +392,7 @@
 (function(){
   "use strict";
 
-  /* ============================================================
-     STATE
-     ============================================================ */
+
   var DEFAULTS = {
     studyMin: 25,
     shortMin: 5,
@@ -422,9 +417,7 @@
   var tickHandle = null;
   var audioCtx = null;
 
-  /* ============================================================
-     ELEMENTS
-     ============================================================ */
+
   var el = {
     wrap: document.getElementById('emblemWrap'),
     batSvg: document.getElementById('batSvg'),
@@ -450,9 +443,8 @@
     inVolume: document.getElementById('inVolume')
   };
 
-  /* ============================================================
-     PERSISTENCE
-     ============================================================ */
+
+
   function saveSettings(){
     try{
       var payload = {
@@ -477,9 +469,6 @@
     }catch(e){ /* corrupted or unavailable storage — use defaults */ }
   }
 
-  /* ============================================================
-     TIMER CORE (timestamp-based, drift-proof)
-     ============================================================ */
   function durationForMode(mode){
     if(mode === 'study') return settings.studyMin * 60000;
     if(mode === 'short') return settings.shortMin * 60000;
@@ -584,9 +573,6 @@
     updateDisplay();
   }
 
-  /* ============================================================
-     UI UPDATES
-     ============================================================ */
   function updateStartPauseIcon(){
     if(state.isRunning){
       el.iconStartPause.innerHTML = '<rect x="6" y="4" width="4.5" height="16" fill="currentColor"></rect><rect x="14" y="4" width="4.5" height="16" fill="currentColor"></rect>';
@@ -766,9 +752,7 @@
     return Math.max(min, Math.min(max, n));
   }
 
-  /* ============================================================
-     CONTROL BUTTON BINDINGS
-     ============================================================ */
+
   el.btnStartPause.addEventListener('click', toggleStartPause);
   el.btnReset.addEventListener('click', resetTimer);
   el.btnSkip.addEventListener('click', skipSession);
@@ -781,9 +765,7 @@
   el.btnSettings.addEventListener('click', toggleSettings);
   el.btnCloseSettings.addEventListener('click', closeSettings);
 
-  /* ============================================================
-     KEYBOARD SHORTCUTS
-     ============================================================ */
+
   document.addEventListener('keydown', function(e){
     var tag = (e.target && e.target.tagName) || '';
     if(tag === 'INPUT') return; // don't hijack typing in settings fields
@@ -811,9 +793,6 @@
     }
   });
 
-  /* ============================================================
-     INIT
-     ============================================================ */
   function init(){
     loadSettings();
 
